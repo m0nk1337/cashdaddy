@@ -23,8 +23,10 @@ services:
         sync: false # paste Neon connection string (starts with postgresql://)
       - key: JWT_SECRET
         generateValue: true
+      # Set to "smtp" in the Render dashboard once SMTP_* below are filled.
+      # sync:false keeps the dashboard value authoritative on blueprint re-syncs.
       - key: EMAIL_MODE
-        value: log
+        sync: false
 
   - type: web
     name: cashdaddy-web
