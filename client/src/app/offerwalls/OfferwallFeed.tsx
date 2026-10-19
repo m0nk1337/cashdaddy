@@ -267,9 +267,15 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
                     <h3 className="font-bold leading-snug">{campaign.title}</h3>
                   </div>
                 </div>
-                <span className="shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-sm font-extrabold text-emerald-600 tabular-nums">
-                  +{formatCents(campaign.reward_cents)}
-                </span>
+                {campaign.reward_cents > 0 ? (
+                  <span className="shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-sm font-extrabold text-emerald-600 tabular-nums">
+                    +{formatCents(campaign.reward_cents)}
+                  </span>
+                ) : (
+                  <span className="shrink-0 rounded-lg bg-zinc-100 px-2 py-1 text-[11px] font-bold text-zinc-500">
+                    Reward on completion
+                  </span>
+                )}
               </div>
 
               {campaign.description && (
