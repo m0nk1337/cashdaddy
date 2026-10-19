@@ -23,9 +23,24 @@ services:
         sync: false # paste Neon connection string (starts with postgresql://)
       - key: JWT_SECRET
         generateValue: true
-      # Set to "smtp" in the Render dashboard once SMTP_* below are filled.
-      # sync:false keeps the dashboard value authoritative on blueprint re-syncs.
+      # Email: Render FREE blocks outbound SMTP ports (25/465/587), so send via
+      # Resend's HTTP API (port 443): set EMAIL_MODE=resend, RESEND_API_KEY
+      # (sending-only key scoped to mail.cashdaddy.me), EMAIL_FROM below.
+      # SMTP_* is only used by EMAIL_MODE=smtp, which needs a paid instance.
+      # sync:false keeps dashboard values authoritative on blueprint re-syncs.
       - key: EMAIL_MODE
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: EMAIL_FROM
         sync: false
 
   - type: web

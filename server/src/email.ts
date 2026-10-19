@@ -24,7 +24,35 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
+async function sendViaResendApi(payload: MailPayload): Promise<void> {
+  if (!config.email.apiKey) {
+    throw new Error('RESEND_API_KEY is not set');
+  }
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.email.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: config.email.from,
+      to: [payload.to],
+      subject: payload.subject,
+      text: payload.text,
+      html: payload.html,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Resend API ${res.status}: ${detail}`);
+  }
+}
+
 export async function sendMail(payload: MailPayload): Promise<void> {
+  if (config.email.mode === 'resend') {
+    await sendViaResendApi(payload);
+    return;
+  }
   if (config.email.mode !== 'smtp') {
     console.log('----------------------------------------');
     console.log(`[email:log] To: ${payload.to}`);
