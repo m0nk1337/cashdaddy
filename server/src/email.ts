@@ -44,7 +44,7 @@ export async function sendVerificationEmail(
   const link = `${config.clientUrl}/verify-email?token=${encodeURIComponent(token)}`;
   await sendMail({
     to,
-    subject: 'Verify your CashDash email',
+    subject: 'Verify your CashDaddy email',
     text: `Hi ${username}, confirm your email to unlock cashouts: ${link}\nThis link expires in 24 hours.`,
     html: `<p>Hi ${username},</p><p>Confirm your email to unlock cashouts:</p><p><a href="${link}">Verify my email</a></p><p>This link expires in 24 hours.</p>`,
   });
@@ -58,7 +58,7 @@ export async function sendPasswordResetEmail(
   const link = `${config.clientUrl}/reset-password?token=${encodeURIComponent(token)}`;
   await sendMail({
     to,
-    subject: 'Reset your CashDash password',
+    subject: 'Reset your CashDaddy password',
     text: `Hi ${username}, set a new password: ${link}\nThis link expires in 1 hour. If you did not request this, ignore this email.`,
     html: `<p>Hi ${username},</p><p>Set a new password:</p><p><a href="${link}">Reset my password</a></p><p>This link expires in 1 hour. If you did not request this, ignore this email.</p>`,
   });
@@ -76,16 +76,16 @@ export async function sendWithdrawalStatusEmail(
   if (status === 'approved') {
     await sendMail({
       to,
-      subject: 'Your CashDash withdrawal was approved',
-      text: `Hi ${username}, your ${amount} withdrawal via ${methodLabel} has been approved and is on its way. Thanks for being part of CashDash!`,
-      html: `<p>Hi ${username},</p><p>Your <strong>${amount}</strong> withdrawal via ${methodLabel} has been approved and is on its way.</p><p>Thanks for being part of CashDash!</p>`,
+      subject: 'Your CashDaddy withdrawal was approved',
+      text: `Hi ${username}, your ${amount} withdrawal via ${methodLabel} has been approved and is on its way. Thanks for being part of CashDaddy!`,
+      html: `<p>Hi ${username},</p><p>Your <strong>${amount}</strong> withdrawal via ${methodLabel} has been approved and is on its way.</p><p>Thanks for being part of CashDaddy!</p>`,
     });
     return;
   }
   await sendMail({
     to,
-    subject: 'Your CashDash withdrawal needs attention',
-    text: `Hi ${username}, your ${amount} withdrawal via ${methodLabel} was declined. The full amount has been refunded to your CashDash balance — you can request a new payout anytime from your dashboard.`,
-    html: `<p>Hi ${username},</p><p>Your <strong>${amount}</strong> withdrawal via ${methodLabel} was declined. The full amount has been refunded to your CashDash balance — you can request a new payout anytime from your dashboard.</p>`,
+    subject: 'Your CashDaddy withdrawal needs attention',
+    text: `Hi ${username}, your ${amount} withdrawal via ${methodLabel} was declined. The full amount has been refunded to your CashDaddy balance — you can request a new payout anytime from your dashboard.`,
+    html: `<p>Hi ${username},</p><p>Your <strong>${amount}</strong> withdrawal via ${methodLabel} was declined. The full amount has been refunded to your CashDaddy balance — you can request a new payout anytime from your dashboard.</p>`,
   });
 }

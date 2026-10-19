@@ -32,7 +32,7 @@ function RegisterInner() {
 
   return (
     <div className="animate-in mx-auto flex max-w-md flex-col px-4 py-16 sm:px-6">
-      <h1 className="text-center text-3xl font-extrabold">Join CashDash free</h1>
+      <h1 className="text-center text-3xl font-extrabold">Join CashDaddy free</h1>
       <p className="mt-2 text-center text-sm text-zinc-500">
         Create your account and start earning today.
       </p>

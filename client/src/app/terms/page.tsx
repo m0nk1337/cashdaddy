@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — CashDash",
+  title: "Terms of Service — CashDaddy",
 };
 
 export default function TermsPage() {
@@ -12,7 +12,7 @@ export default function TermsPage() {
         <p>Last updated: October 2026</p>
         <h2 className="pt-2 text-base font-bold text-zinc-800">1. The service</h2>
         <p>
-          CashDash rewards you with credits for completing third-party offers, surveys and
+          CashDaddy rewards you with credits for completing third-party offers, surveys and
           tasks. Credits can be exchanged for cash payouts once you reach the minimum
           balance of $5.00.
         </p>

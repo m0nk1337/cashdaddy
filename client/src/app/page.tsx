@@ -46,7 +46,7 @@ export default function Home() {
           </span>
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-600">
-          CashDash pays you for surveys, app trials, videos and mini-tasks from trusted
+          CashDaddy pays you for surveys, app trials, videos and mini-tasks from trusted
           offerwall networks. Earn anywhere, cash out anytime you pass $5.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">

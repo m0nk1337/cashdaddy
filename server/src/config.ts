@@ -58,7 +58,7 @@ export const config = {
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
   email: {
     mode: process.env.EMAIL_MODE || 'log',
-    from: process.env.EMAIL_FROM || 'CashDash <no-reply@cashdash.test>',
+    from: process.env.EMAIL_FROM || 'CashDaddy <no-reply@cashdaddy.me>',
     smtp: {
       host: process.env.SMTP_HOST || '',
       port: Number(process.env.SMTP_PORT) || 587,

@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CashDash — Get Paid To Complete Offers",
+  title: "CashDaddy — Get Paid For The Fun Stuff",
   description:
-    "Join CashDash, complete offerwall surveys, trials and tasks, and cash out your earnings.",
+    "Join CashDaddy and get paid for the fun stuff: surveys, app trials, videos and mini-tasks. Cash out your earnings anytime.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -28,11 +28,11 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 border-b border-white/60 bg-white/80 backdrop-blur-md">
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" className="flex items-center gap-2 text-xl font-extrabold tracking-tight">
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-white shadow-md shadow-indigo-300">
-            C
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 text-lg font-black text-white shadow-md shadow-indigo-300">
+            $
           </span>
           <span className="bg-gradient-to-r from-indigo-600 to-pink-600 bg-clip-text text-transparent">
-            CashDash
+            CashDaddy
           </span>
         </Link>
 

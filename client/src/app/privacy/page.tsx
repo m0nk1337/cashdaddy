@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — CashDash",
+  title: "Privacy Policy — CashDaddy",
 };
 
 export default function PrivacyPage() {
