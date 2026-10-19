@@ -1,0 +1,15 @@
+name: Keep Render services awake
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping site and API
+        run: |
+          curl -fsS -o /dev/null -w "web:%{http_code}\n" --max-time 30 https://cashdaddy.me/ || true
+          curl -fsS -o /dev/null -w "api:%{http_code}\n" --max-time 30 https://api.cashdaddy.me/ || true
