@@ -9,4 +9,5 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:5001
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN pnpm exec next build
 EXPOSE 3000
-CMD ["sh", "-c", "pnpm start -- -H 0.0.0.0 -p ${PORT:-3000}"]
+# next start binds 0.0.0.0 by default and respects $PORT (Render sets PORT=10000)
+CMD ["sh", "-c", "pnpm exec next start -p ${PORT:-3000}"]
