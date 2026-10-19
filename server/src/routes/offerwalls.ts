@@ -9,6 +9,7 @@ import {
   isOfferwallMeFeed,
   type OfferwallMeConfig,
 } from '../offerwallme';
+import { countryForIp } from '../geo';
 
 const router = Router();
 
@@ -113,13 +114,15 @@ router.get('/:id/feed', requireAuth, async (req: Request, res: Response) => {
   if (!Number.isInteger(id)) {
     return res.status(400).json({ error: 'Invalid offerwall id' });
   }
-  const country = requestCountry(req.query.country);
+  const countryHint = requestCountry(req.query.country);
   try {
     const loaded = await loadFeedWall(id);
     if ('error' in loaded) {
       return res.status(loaded.status).json({ error: loaded.error });
     }
-    const campaigns = await fetchFeed(loaded.config, String(req.user!.id), clientIp(req), country);
+    const ip = clientIp(req);
+    const country = (await countryForIp(ip)) || countryHint;
+    const campaigns = await fetchFeed(loaded.config, String(req.user!.id), ip, country);
     res.json({ country, campaigns });
   } catch (err) {
     console.error(err);
@@ -157,7 +160,8 @@ router.post('/:id/tasks/:taskId/submit', requireAuth, async (req: Request, res: 
       ...loaded.config,
       userId: String(req.user!.id),
       ip: clientIp(req),
-      country: requestCountry(req.query.country),
+      country:
+        (await countryForIp(clientIp(req))) || requestCountry(req.query.country),
       taskId,
       proof: typeof proof === 'string' ? proof : undefined,
       image: imageInput,
