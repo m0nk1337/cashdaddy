@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --background: #faf9ff;
+  --foreground: #18181b;
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+.blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-indigo-600 to-pink-600 px-6 py-3 font-bold text-white shadow-lg shadow-indigo-300 transition-transform hover:scale-[1.03] active:scale-95;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full border border-zinc-200 bg-white px-6 py-3 font-bold text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50;
+}
+
+.card {
+  @apply rounded-3xl border border-zinc-100 bg-white p-6 shadow-sm;
+}
+
+.field {
+  @apply w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-zinc-400 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100;
+}
+
+@keyframes float-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: float-up 0.45s ease-out both;
+}

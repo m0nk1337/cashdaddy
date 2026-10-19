@@ -1,0 +1,61 @@
+# One-click free deploy on Render:
+#   Render Dashboard → New → Blueprint → select this repo on GitHub.
+# After creation, point DNS at the services (see DEPLOY.md), then custom-domains.
+services:
+  - type: web
+    name: cashdaddy-api
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./server
+    dockerfilePath: ./server/Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "true"
+      - key: CLIENT_URL
+        value: https://cashdaddy.me
+      - key: DB_HOST
+        fromDatabase:
+          name: cashdaddy-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: cashdaddy-db
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: cashdaddy-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: cashdaddy-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: cashdaddy-db
+          property: database
+      - key: JWT_SECRET
+        generateValue: true
+      - key: EMAIL_MODE
+        value: log
+
+  - type: web
+    name: cashdaddy-web
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerContext: ./client
+    dockerfilePath: ./client/Dockerfile
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://api.cashdaddy.me
+
+databases:
+  - name: cashdaddy-db
+    plan: free
+    region: oregon
+    databaseName: gptsite
+    user: gpt

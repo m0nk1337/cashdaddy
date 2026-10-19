@@ -1,0 +1,43 @@
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+function list(value: string | undefined): string[] {
+  return (value || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export const config = {
+  port: process.env.PORT || 5000,
+  nodeEnv: process.env.NODE_ENV || 'development',
+  jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
+  jwtExpiresIn: '7d',
+  db: {
+    host: process.env.DB_HOST || 'localhost',
+    port: Number(process.env.DB_PORT) || 5432,
+    user: process.env.DB_USER || 'gpt',
+    password: process.env.DB_PASSWORD || 'gpt_secret',
+    database: process.env.DB_NAME || 'gptsite',
+  },
+  minWithdrawCents: 500,
+  maxPostbackCents: Number(process.env.MAX_POSTBACK_CENTS) || 10000,
+  maxAccountsPerIp: Number(process.env.MAX_ACCOUNTS_PER_IP) || 3,
+  authRateLimit: Number(process.env.AUTH_RATE_LIMIT) || 30,
+  referralRate: Number(process.env.REFERRAL_RATE) || 0.1,
+  referralSignupBonusCents: Number(process.env.REFERRAL_SIGNUP_BONUS_CENTS) || 25,
+  trustProxy: process.env.TRUST_PROXY === 'true',
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  email: {
+    mode: process.env.EMAIL_MODE || 'log',
+    from: process.env.EMAIL_FROM || 'CashDash <no-reply@cashdash.test>',
+    smtp: {
+      host: process.env.SMTP_HOST || '',
+      port: Number(process.env.SMTP_PORT) || 587,
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+    },
+  },
+  adgateIps: list(process.env.ADGATE_IPS),
+};

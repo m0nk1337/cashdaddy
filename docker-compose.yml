@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gpt
+      POSTGRES_PASSWORD: gpt_secret
+      POSTGRES_DB: gptsite
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gpt -d gptsite"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./server
+    environment:
+      PORT: "5000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: gpt
+      DB_PASSWORD: gpt_secret
+      DB_NAME: gptsite
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      CLIENT_URL: http://localhost:3001
+      EMAIL_MODE: ${EMAIL_MODE:-log}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      ADGATE_IPS: ${ADGATE_IPS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+    ports:
+      - "5001:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./client
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:5001
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
