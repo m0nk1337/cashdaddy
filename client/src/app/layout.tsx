@@ -19,6 +19,11 @@ export const metadata: Metadata = {
   title: "CashDaddy — Get Paid For The Fun Stuff",
   description:
     "Join CashDaddy and get paid for the fun stuff: surveys, app trials, videos and mini-tasks. Cash out your earnings anytime.",
+  verification: {
+    other: {
+      "offerwall-verification": "6ad6675f1c3d1991930c1da6",
+    },
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
