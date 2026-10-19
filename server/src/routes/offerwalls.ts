@@ -14,7 +14,10 @@ import { countryForIp } from '../geo';
 const router = Router();
 
 function clientIp(req: Request): string {
-  return (req.ip || '').replace('::ffff:', '');
+  const header = req.headers['x-forwarded-for'];
+  const raw = Array.isArray(header) ? header[0] : header;
+  const first = raw ? raw.split(',')[0].trim() : '';
+  return (first || req.ip || '').replace('::ffff:', '');
 }
 
 function requestCountry(value: unknown): string {
