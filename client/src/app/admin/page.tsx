@@ -71,7 +71,14 @@ export default function AdminPage() {
   const [wallDrafts, setWallDrafts] = useState<
     Record<
       number,
-      { wall_url: string; postback_secret: string; mode: string; display_name: string; public_key: string }
+      {
+        wall_url: string;
+        postback_secret: string;
+        mode: string;
+        display_name: string;
+        public_key: string;
+        bearer_token: string;
+      }
     >
   >({});
   const [savedWallId, setSavedWallId] = useState<number | null>(null);
@@ -105,6 +112,7 @@ export default function AdminPage() {
               mode: wall.mode,
               display_name: wall.display_name || "",
               public_key: wall.postback_config?.public_key || "",
+              bearer_token: wall.postback_config?.bearer_token || "",
             },
           ])
         )
@@ -156,6 +164,7 @@ export default function AdminPage() {
           postback_secret: draft.postback_secret,
           display_name: draft.display_name,
           public_key: draft.public_key,
+          bearer_token: draft.bearer_token,
         },
       });
       setSavedWallId(wall.id);
@@ -457,6 +466,28 @@ export default function AdminPage() {
                         Links are signed server-side automatically once this key + secret are saved.
                       </p>
                     )}
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-xs font-bold text-zinc-500">
+                      Bearer token / API calls (Offerwall.me on-site feed)
+                    </label>
+                    <input
+                      className="field font-mono text-xs"
+                      placeholder="Placement bearer token (API calls)"
+                      value={draft.bearer_token}
+                      onChange={(e) =>
+                        setWallDrafts((d) => ({
+                          ...d,
+                          [wall.id]: { ...d[wall.id], bearer_token: e.target.value },
+                        }))
+                      }
+                    />
+                    <p className="mt-1 text-xs text-zinc-400">
+                      With this saved, Offerwall.me offers, PTC ads, shortlinks and tasks are
+                      fetched server-side and shown as individual cards on your site — no iframe.
+                      Required: domain verified, placement approved, and{" "}
+                      <b>Require signed user IDs</b> enabled.
+                    </p>
                   </div>
                   <div className="flex items-end">
                     <button

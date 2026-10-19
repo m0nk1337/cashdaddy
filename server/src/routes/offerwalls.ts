@@ -3,8 +3,45 @@ import crypto from 'crypto';
 import { pool } from '../db';
 import { requireAuth, optionalAuth } from '../middleware/auth';
 import { awardReferralBonus } from '../referrals';
+import {
+  fetchFeed,
+  submitTask,
+  isOfferwallMeFeed,
+  type OfferwallMeConfig,
+} from '../offerwallme';
 
 const router = Router();
+
+function clientIp(req: Request): string {
+  return (req.ip || '').replace('::ffff:', '');
+}
+
+function requestCountry(value: unknown): string {
+  const raw = String(value ?? '').toUpperCase();
+  return /^[A-Z]{2}$/.test(raw) ? raw : 'US';
+}
+
+interface WallFeedRow {
+  postback_secret: string | null;
+  postback_config: Record<string, string> | null;
+}
+
+async function loadFeedWall(id: number): Promise<{ config: OfferwallMeConfig } | { error: string; status: number }> {
+  const result = await pool.query<WallFeedRow>(
+    `SELECT postback_secret, postback_config FROM offerwalls
+     WHERE id = $1 AND is_active = TRUE AND mode = 'live'`,
+    [id]
+  );
+  if (!result.rowCount) return { error: 'Offerwall not found', status: 404 };
+  const wall = result.rows[0];
+  const cfg = wall.postback_config || {};
+  if (!isOfferwallMeFeed(cfg) || !wall.postback_secret) {
+    return { error: 'This offerwall does not support an on-site feed', status: 400 };
+  }
+  const bearer = cfg.bearer_token;
+  if (!bearer) return { error: 'Offerwall.me API bearer token is not configured', status: 400 };
+  return { config: { publicKey: cfg.public_key, secret: wall.postback_secret, bearer } };
+}
 
 router.get('/embed-urls', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -44,7 +81,7 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
   try {
     const isAdmin = req.user?.is_admin === true;
     const walls = await pool.query(
-      `SELECT id, display_name, description, color, mode, wall_url
+      `SELECT id, display_name, description, color, mode, wall_url, postback_config
        FROM offerwalls
        WHERE is_active = TRUE ${isAdmin ? '' : "AND mode = 'live'"}
        ORDER BY id`
@@ -53,14 +90,85 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
       'SELECT id, offerwall_id, title, description, reward_cents, device FROM offers ORDER BY reward_cents DESC'
     );
     res.json({
-      offerwalls: walls.rows.map((w) => ({
-        ...w,
-        offers: offers.rows.filter((o) => o.offerwall_id === w.id),
-      })),
+      offerwalls: walls.rows.map((w) => {
+        const { postback_config, ...rest } = w as { postback_config: Record<string, unknown> | null } & Record<
+          string,
+          unknown
+        >;
+        return {
+          ...rest,
+          has_feed: w.mode === 'live' && isOfferwallMeFeed(postback_config),
+          offers: offers.rows.filter((o) => o.offerwall_id === w.id),
+        };
+      }),
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to load offerwalls' });
+  }
+});
+
+router.get('/:id/feed', requireAuth, async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: 'Invalid offerwall id' });
+  }
+  const country = requestCountry(req.query.country);
+  try {
+    const loaded = await loadFeedWall(id);
+    if ('error' in loaded) {
+      return res.status(loaded.status).json({ error: loaded.error });
+    }
+    const campaigns = await fetchFeed(loaded.config, String(req.user!.id), clientIp(req), country);
+    res.json({ country, campaigns });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load offers' });
+  }
+});
+
+router.post('/:id/tasks/:taskId/submit', requireAuth, async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const taskId = String(req.params.taskId || '');
+  if (!Number.isInteger(id) || !taskId) {
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+  const { proof, image } = (req.body ?? {}) as { proof?: unknown; image?: unknown };
+  let imageInput: { base64: string; mime: string } | undefined;
+  if (image && typeof image === 'object') {
+    const candidate = image as { base64?: unknown; mime?: unknown };
+    const mime = String(candidate.mime || '').toLowerCase();
+    if (['image/jpeg', 'image/png', 'image/webp'].includes(mime) && typeof candidate.base64 === 'string') {
+      if (Buffer.byteLength(candidate.base64, 'base64') > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Image must be 5 MB or smaller' });
+      }
+      imageInput = { base64: candidate.base64, mime };
+    }
+  }
+  if (typeof proof !== 'string' && !imageInput) {
+    return res.status(400).json({ error: 'Proof is required' });
+  }
+  try {
+    const loaded = await loadFeedWall(id);
+    if ('error' in loaded) {
+      return res.status(loaded.status).json({ error: loaded.error });
+    }
+    const result = await submitTask({
+      ...loaded.config,
+      userId: String(req.user!.id),
+      ip: clientIp(req),
+      country: requestCountry(req.query.country),
+      taskId,
+      proof: typeof proof === 'string' ? proof : undefined,
+      image: imageInput,
+    });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error || 'Task submission failed' });
+    }
+    res.json({ status: result.status || 'Pending' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to submit task' });
   }
 });
 

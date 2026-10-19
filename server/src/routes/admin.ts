@@ -61,7 +61,7 @@ router.patch('/offerwalls/:id', async (req: Request, res: Response) => {
   if (!Number.isInteger(id)) {
     return res.status(400).json({ error: 'Invalid offerwall id' });
   }
-  const { mode, wall_url, postback_secret, display_name, public_key } = req.body ?? {};
+  const { mode, wall_url, postback_secret, display_name, public_key, bearer_token } = req.body ?? {};
   if (mode !== undefined && !['demo', 'live'].includes(mode)) {
     return res.status(400).json({ error: 'mode must be demo or live' });
   }
@@ -84,18 +84,42 @@ router.patch('/offerwalls/:id', async (req: Request, res: Response) => {
   if (typeof public_key === 'string' && public_key.length > 300) {
     return res.status(400).json({ error: 'public_key must be at most 300 characters' });
   }
+  if (bearer_token !== undefined && bearer_token !== null && typeof bearer_token !== 'string') {
+    return res.status(400).json({ error: 'bearer_token must be a string' });
+  }
+  if (typeof bearer_token === 'string' && bearer_token.length > 300) {
+    return res.status(400).json({ error: 'bearer_token must be at most 300 characters' });
+  }
   try {
+    const existing = await pool.query('SELECT postback_config FROM offerwalls WHERE id = $1', [id]);
+    if (!existing.rowCount) {
+      return res.status(404).json({ error: 'Offerwall not found' });
+    }
+    const config = { ...((existing.rows[0].postback_config || {}) as Record<string, unknown>) };
+    let configChanged = false;
+    for (const [field, value] of [
+      ['public_key', public_key],
+      ['bearer_token', bearer_token],
+    ] as const) {
+      if (value === undefined || value === null) continue;
+      const next = String(value).trim();
+      if (next === '') {
+        if (field in config) {
+          delete config[field];
+          configChanged = true;
+        }
+      } else if (config[field] !== next) {
+        config[field] = next;
+        configChanged = true;
+      }
+    }
     const result = await pool.query(
       `UPDATE offerwalls
        SET mode = COALESCE($1, mode),
            wall_url = CASE WHEN $2::text = '' THEN NULL WHEN $2::text IS NULL THEN wall_url ELSE $2::text END,
            postback_secret = CASE WHEN $3::text = '' THEN NULL WHEN $3::text IS NULL THEN postback_secret ELSE $3::text END,
            display_name = COALESCE($5, display_name),
-           postback_config = CASE
-             WHEN $6::text IS NULL THEN postback_config
-             WHEN $6::text = '' THEN COALESCE(postback_config, '{}'::jsonb) - 'public_key'
-             ELSE COALESCE(postback_config, '{}'::jsonb) || jsonb_build_object('public_key', $6::text)
-           END
+           postback_config = $6::jsonb
        WHERE id = $4
        RETURNING id, name, slug, display_name, mode, wall_url, postback_secret, postback_config`,
       [
@@ -104,7 +128,7 @@ router.patch('/offerwalls/:id', async (req: Request, res: Response) => {
         postback_secret ?? null,
         id,
         display_name === undefined ? null : String(display_name).trim(),
-        public_key === undefined || public_key === null ? null : String(public_key).trim(),
+        configChanged ? JSON.stringify(config) : existing.rows[0].postback_config,
       ]
     );
     if (!result.rowCount) {

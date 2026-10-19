@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { api, formatCents } from "@/lib/api";
+import OfferwallFeed from "./OfferwallFeed";
 
 interface Offer {
   id: number;
@@ -22,6 +23,7 @@ interface Offerwall {
   color: string;
   mode: "demo" | "live";
   wall_url: string | null;
+  has_feed?: boolean;
   offers: Offer[];
 }
 
@@ -206,22 +208,26 @@ export default function OfferwallsPage() {
                 </span>
               </div>
               {wall.mode === "live" ? (
-                <div className="border-t border-zinc-100 p-4">
-                  {wall.wall_url ? (
-                    <iframe
-                      src={
-                        embedUrls[wall.id] ??
-                        wall.wall_url.replace("{userId}", String(user.id))
-                      }
-                      title={`${wall.display_name} offerwall`}
-                      className="h-[640px] w-full rounded-2xl border border-zinc-200"
-                    />
-                  ) : (
-                    <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500">
-                      {wall.display_name} is being set up. Check back soon.
-                    </p>
-                  )}
-                </div>
+                wall.has_feed ? (
+                  <OfferwallFeed wallId={wall.id} color={wall.color} />
+                ) : (
+                  <div className="border-t border-zinc-100 p-4">
+                    {wall.wall_url ? (
+                      <iframe
+                        src={
+                          embedUrls[wall.id] ??
+                          wall.wall_url.replace("{userId}", String(user.id))
+                        }
+                        title={`${wall.display_name} offerwall`}
+                        className="h-[640px] w-full rounded-2xl border border-zinc-200"
+                      />
+                    ) : (
+                      <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500">
+                        {wall.display_name} is being set up. Check back soon.
+                      </p>
+                    )}
+                  </div>
+                )
               ) : (
                 <ul className="grid gap-px bg-zinc-100 sm:grid-cols-2 lg:grid-cols-3">
                   {wall.offers.map((offer) => {

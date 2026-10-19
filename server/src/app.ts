@@ -32,6 +32,7 @@ export function createApp(): express.Express {
     })
   );
 
+  app.use('/api/offerwalls', express.json({ limit: '8mb' }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
 
