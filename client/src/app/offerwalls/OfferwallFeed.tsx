@@ -32,11 +32,11 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "shortlink", label: "Shortlinks" },
 ];
 
-const TYPE_BADGES: Record<FeedCampaign["type"], { label: string; className: string }> = {
-  task: { label: "Task", className: "bg-sky-100 text-sky-700" },
-  offer: { label: "Offer", className: "bg-indigo-100 text-indigo-700" },
-  ptc: { label: "Watch", className: "bg-amber-100 text-amber-700" },
-  shortlink: { label: "Shortlink", className: "bg-emerald-100 text-emerald-700" },
+const TYPE_BADGES: Record<FeedCampaign["type"], { label: string; icon: string; className: string }> = {
+  task: { label: "Task", icon: "Task", className: "bg-sky-100 text-sky-700" },
+  offer: { label: "Offer", icon: "Offer", className: "bg-indigo-100 text-indigo-700" },
+  ptc: { label: "Watch", icon: "PTC", className: "bg-amber-100 text-amber-700" },
+  shortlink: { label: "Shortlink", icon: "Link", className: "bg-emerald-100 text-emerald-700" },
 };
 
 function formatReward(cents: number): string {
@@ -359,9 +359,9 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
                     />
                   ) : (
                     <span
-                      className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[10px] font-extrabold ${badge.className}`}
+                      className={`grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg px-1 text-center text-[10px] font-extrabold leading-none ${badge.className}`}
                     >
-                      {badge.label}
+                      {badge.icon}
                     </span>
                   )}
                   <div className="min-w-0">
