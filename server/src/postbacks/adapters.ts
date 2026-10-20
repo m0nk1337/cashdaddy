@@ -243,11 +243,51 @@ const offerwallme: PostbackAdapter = {
   },
 };
 
+// BitcoTasks: signature = md5(subId + transId + reward + secret).
+// reward is in the app's virtual currency; reward_value is how many units equal $1 USD.
+// cents = reward / reward_value * 100 (reward_value defaults to 100, i.e. 1 unit = 1 cent).
+const bitcotasks: PostbackAdapter = {
+  validate(ctx) {
+    if (!ctx.secret) return { valid: false, reason: 'postback secret not configured' };
+    const provided = pick(ctx, 'signature');
+    if (!provided) return { valid: false, reason: 'missing signature' };
+    const subId = pick(ctx, 'subId') || '';
+    const transId = pick(ctx, 'transId') || '';
+    const reward = pick(ctx, 'reward') || '';
+    const expected = crypto.createHash('md5').update(subId + transId + reward + ctx.secret).digest('hex');
+    if (!safeEqual(expected, provided)) return { valid: false, reason: 'signature mismatch' };
+    return { valid: true };
+  },
+  parse(ctx) {
+    const userId = pick(ctx, 'subId');
+    const txnId = pick(ctx, 'transId');
+    if (!userId || !txnId) return { ok: false, error: 'missing subId or transId' };
+
+    const reward = Number(pick(ctx, 'reward') ?? '0');
+    if (!Number.isFinite(reward) || reward < 0) return { ok: false, error: 'invalid reward' };
+    const rate = Number(pick(ctx, 'reward_value') ?? '100');
+    const centsPerUsd = 100;
+    const value = rate > 0 ? Math.round((reward / rate) * centsPerUsd) : Math.round(reward);
+
+    const status = pick(ctx, 'status') ?? '1';
+    const title = pick(ctx, 'offer_name');
+
+    if (status === '2') {
+      return { ok: true, value: { userId, txnId, rewardCents: value, action: 'reverse', title } };
+    }
+    if (status !== '1') {
+      return { ok: true, value: { userId, txnId, rewardCents: 0, action: 'ignore', title } };
+    }
+    return { ok: true, value: { userId, txnId, rewardCents: value, action: 'credit', title } };
+  },
+};
+
 export const adapters: Record<string, PostbackAdapter> = {
   adgate,
   cpx,
   bitlabs,
   offerwallme,
+  bitcotasks,
   generic,
 };
 

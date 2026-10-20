@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 
 interface FeedCampaign {
   key: string;
+  wall_id?: number;
   type: "offer" | "ptc" | "shortlink" | "task";
   id: string;
   title: string;
@@ -100,7 +101,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-async function getCampaigns(wallId: number): Promise<FeedCampaign[]> {
+async function getCampaigns(wallId: string): Promise<FeedCampaign[]> {
   const country = detectCountry();
   const data = await api<{ campaigns: FeedCampaign[] }>(
     `/api/offerwalls/${wallId}/feed?country=${country}`
@@ -117,7 +118,7 @@ interface CompleteState {
   creditedCents: number;
 }
 
-export default function OfferwallFeed({ wallId, color }: { wallId: number; color: string }) {
+export default function OfferwallFeed({ wallId, color }: { wallId: string; color: string }) {
   const { refresh: refreshAuth } = useAuth();
   const [campaigns, setCampaigns] = useState<FeedCampaign[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,8 +221,9 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
     setToast(null);
     const tab = window.open("", "_blank");
     try {
+      const startWall = campaign.wall_id ?? Number(wallId.split(",")[0]);
       const { sessionId } = await api<{ sessionId: string }>(
-        `/api/offerwalls/${wallId}/start`,
+        `/api/offerwalls/${startWall}/start`,
         {
           method: "POST",
           body: {
@@ -257,7 +259,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
       if (proof.trim()) body.proof = proof.trim();
       if (file) body.image = { base64: await fileToBase64(file), mime: file.type };
       const result = await api<{ status: string }>(
-        `/api/offerwalls/${wallId}/tasks/${campaign.id}/submit`,
+        `/api/offerwalls/${campaign.wall_id ?? Number(wallId.split(",")[0])}/tasks/${campaign.id}/submit`,
         { method: "POST", body }
       );
       setToast({ kind: "ok", text: `Task submitted — status: ${result.status}` });

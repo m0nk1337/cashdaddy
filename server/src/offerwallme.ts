@@ -11,6 +11,7 @@ export interface OfferwallMeConfig {
 
 export interface FeedCampaign {
   key: string;
+  wall_id?: number;
   type: 'offer' | 'ptc' | 'shortlink' | 'task';
   id: string;
   title: string;

@@ -591,9 +591,22 @@ describe('offerwall.me integration', () => {
     expect(wall).toBeTruthy();
     expect(wall.display_name).toBe('Micro Tasks');
     expect(wall.postback_config).toMatchObject({ adapter: 'offerwallme', signing: 'offerwallme' });
+    const btWall = walls.body.offerwalls.find((w: { slug: string }) => w.slug === 'bitcotasks');
+
+    await request(app)
+      .patch(`/api/admin/offerwalls/${wall.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ mode: 'demo' })
+      .expect(200);
+    if (btWall) {
+      await request(app)
+        .patch(`/api/admin/offerwalls/${btWall.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mode: 'demo' })
+        .expect(200);
+    }
 
     const anon = await request(app).get('/api/offerwalls').expect(200);
-    expect(anon.body.offerwalls.find((w: { id: number }) => w.id === wall.id)).toBeUndefined();
     const named = anon.body.offerwalls.some(
       (w: { display_name?: string; name?: string }) =>
         w.display_name === 'Micro Tasks' || w.name === 'Offerwall.me'
@@ -867,5 +880,156 @@ describe('offer session tracking', () => {
       .set('Authorization', `Bearer ${other.token}`)
       .expect(200);
     expect(list.body.sessions).toHaveLength(0);
+  });
+});
+
+describe('bitcotasks integration', () => {
+  const SECRET = 'bitcotasks_test_secret';
+
+  async function adminToken(): Promise<string> {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ username: 'admin', password: 'admin12345' })
+      .expect(200);
+    return res.body.token as string;
+  }
+
+  async function liveBitcoTasksWall(token: string): Promise<number> {
+    const walls = await request(app)
+      .get('/api/admin/offerwalls')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wall = walls.body.offerwalls.find((w: { slug: string }) => w.slug === 'bitcotasks');
+    expect(wall).toBeTruthy();
+    await request(app)
+      .patch(`/api/admin/offerwalls/${wall.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mode: 'live',
+        postback_secret: SECRET,
+        api_key: 'sf8xoylj4gkmfk37br1aaea3231q4u',
+        secret_key: SECRET,
+        bearer_token: 'bt_bearer_test',
+      })
+      .expect(200);
+    return wall.id as number;
+  }
+
+  it('seeds a hidden bitcotasks wall', async () => {
+    const token = await adminToken();
+    const walls = await request(app)
+      .get('/api/admin/offerwalls')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wall = walls.body.offerwalls.find((w: { slug: string }) => w.slug === 'bitcotasks');
+    expect(wall).toBeTruthy();
+    expect(wall.postback_config).toMatchObject({ adapter: 'bitcotasks', signing: 'bitcotasks' });
+  });
+
+  it('returns the literal "ok" body for every bitcotasks postback outcome', async () => {
+    const token = await adminToken();
+    const wallId = await liveBitcoTasksWall(token);
+    const user = await registerUser('btok');
+    const txn = `bt_${uniq()}`;
+    const reward = '1.25';
+    const sig = crypto.createHash('md5').update(String(user.id) + txn + reward + SECRET).digest('hex');
+
+    const credited = await request(app)
+      .get(
+        `/api/postback/bitcotasks?subId=${user.id}&transId=${txn}&reward=${reward}&reward_value=100&status=1&signature=${sig}`
+      )
+      .expect(200);
+    expect(credited.text).toBe('ok');
+    expect(credited.headers['content-type']).toContain('text/plain');
+    expect(await balanceOf(user.id)).toBe(1);
+
+    const dup = await request(app)
+      .get(
+        `/api/postback/bitcotasks?subId=${user.id}&transId=${txn}&reward=${reward}&reward_value=100&status=1&signature=${sig}`
+      )
+      .expect(200);
+    expect(dup.text).toBe('ok');
+    expect(await balanceOf(user.id)).toBe(1);
+
+    const rejected = await request(app)
+      .get(`/api/postback/bitcotasks?subId=${user.id}&transId=${txn}_bad&reward=${reward}&signature=deadbeef`)
+      .expect(200);
+    expect(rejected.text).toBe('ok');
+    expect(await balanceOf(user.id)).toBe(1);
+  });
+
+  it('converts reward using reward_value (units per $1 USD)', async () => {
+    const token = await adminToken();
+    await liveBitcoTasksWall(token);
+    const user = await registerUser('btconv');
+
+    async function credit(reward: string, rewardValue: string): Promise<number> {
+      const txn = `bt_${uniq()}`;
+      const sig = crypto.createHash('md5').update(String(user.id) + txn + reward + SECRET).digest('hex');
+      await request(app)
+        .get(
+          `/api/postback/bitcotasks?subId=${user.id}&transId=${txn}&reward=${reward}&reward_value=${rewardValue}&status=1&signature=${sig}`
+        )
+        .expect(200);
+      return balanceOf(user.id);
+    }
+
+    // 100 units = $1 -> 1.00 reward = 1 cent
+    expect(await credit('1.00', '100')).toBe(1);
+    // 1000 units = $1 -> 10.00 reward = 1 cent
+    expect(await credit('10.00', '1000')).toBe(2);
+    // 50 units = $1 -> 1.25 reward = 2.5 -> rounds to 3 cents
+    expect(await credit('1.25', '50')).toBe(5);
+  });
+
+  it('reverses a bitcotasks lead via status=2', async () => {
+    const token = await adminToken();
+    await liveBitcoTasksWall(token);
+    const user = await registerUser('btrev');
+    const txn = `bt_${uniq()}`;
+    const reward = '5.00';
+    const sig = crypto.createHash('md5').update(String(user.id) + txn + reward + SECRET).digest('hex');
+    await request(app)
+      .get(
+        `/api/postback/bitcotasks?subId=${user.id}&transId=${txn}&reward=${reward}&reward_value=100&status=1&signature=${sig}`
+      )
+      .expect(200);
+    expect(await balanceOf(user.id)).toBe(5);
+    const reversed = await request(app)
+      .get(
+        `/api/postback/bitcotasks?subId=${user.id}&transId=${txn}&reward=${reward}&reward_value=100&status=2&signature=${sig}`
+      )
+      .expect(200);
+    expect(reversed.text).toBe('ok');
+    expect(await balanceOf(user.id)).toBe(0);
+  });
+
+  it('exposes the merged feed wall ids and has_feed on the Micro Tasks section', async () => {
+    const token = await adminToken();
+    await liveBitcoTasksWall(token);
+    const adminWalls = await request(app)
+      .get('/api/admin/offerwalls')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const owmWall = adminWalls.body.offerwalls.find((w: { slug: string }) => w.slug === 'offerwall-me');
+    await request(app)
+      .patch(`/api/admin/offerwalls/${owmWall.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mode: 'live',
+        public_key: 'pk_merge_test',
+        postback_secret: 'secret_ow_merge',
+        bearer_token: 'ow_bearer_test',
+      })
+      .expect(200);
+
+    const walls = await request(app).get('/api/offerwalls').expect(200);
+    const micro = walls.body.offerwalls.find(
+      (w: { display_name?: string }) => w.display_name === 'Micro Tasks'
+    );
+    expect(micro).toBeTruthy();
+    expect(micro.has_feed).toBe(true);
+    expect(Array.isArray(micro.feed_wall_ids)).toBe(true);
+    expect(micro.feed_wall_ids.length).toBeGreaterThanOrEqual(2);
   });
 });

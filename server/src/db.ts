@@ -130,6 +130,12 @@ SELECT 'Offerwall.me', 'offerwall-me',
        'https://offerwall.me/offerwall/{publicKey}/{userId}',
        '{"adapter":"offerwallme","signing":"offerwallme"}'::jsonb
 ON CONFLICT (slug) DO NOTHING;
+INSERT INTO offerwalls (name, slug, description, display_name, color, mode, postback_config)
+SELECT 'BitcoTasks', 'bitcotasks',
+       'Micro-tasks, PTC, and offers served through BitcoTasks.',
+       'Micro Tasks', '#6366f1', 'demo',
+       '{"adapter":"bitcotasks","signing":"bitcotasks"}'::jsonb
+WHERE NOT EXISTS (SELECT 1 FROM offerwalls WHERE slug = 'bitcotasks');
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by INTEGER REFERENCES users(id);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(12) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_count INTEGER NOT NULL DEFAULT 0;

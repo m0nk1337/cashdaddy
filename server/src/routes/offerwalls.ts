@@ -8,7 +8,13 @@ import {
   submitTask,
   isOfferwallMeFeed,
   type OfferwallMeConfig,
+  type FeedCampaign,
 } from '../offerwallme';
+import {
+  fetchBitcoTasksFeed,
+  isBitcoTasksFeed,
+  type BitcoTasksConfig,
+} from '../bitcotasks';
 import { countryForIp } from '../geo';
 
 const router = Router();
@@ -30,7 +36,15 @@ interface WallFeedRow {
   postback_config: Record<string, string> | null;
 }
 
-async function loadFeedWall(id: number): Promise<{ config: OfferwallMeConfig } | { error: string; status: number }> {
+interface LoadedFeed {
+  offerwallme?: OfferwallMeConfig;
+  bitcotasks?: BitcoTasksConfig;
+  wallId: number;
+}
+
+async function loadFeedWall(
+  id: number
+): Promise<{ config: LoadedFeed } | { error: string; status: number }> {
   const result = await pool.query<WallFeedRow>(
     `SELECT postback_secret, postback_config FROM offerwalls
      WHERE id = $1 AND is_active = TRUE AND mode = 'live'`,
@@ -39,12 +53,27 @@ async function loadFeedWall(id: number): Promise<{ config: OfferwallMeConfig } |
   if (!result.rowCount) return { error: 'Offerwall not found', status: 404 };
   const wall = result.rows[0];
   const cfg = wall.postback_config || {};
-  if (!isOfferwallMeFeed(cfg) || !wall.postback_secret) {
+  const config: LoadedFeed = { wallId: id };
+
+  if (isOfferwallMeFeed(cfg) && wall.postback_secret && cfg.bearer_token) {
+    config.offerwallme = {
+      publicKey: cfg.public_key,
+      secret: wall.postback_secret,
+      bearer: cfg.bearer_token,
+    };
+  }
+  if (isBitcoTasksFeed(cfg) && cfg.bearer_token) {
+    config.bitcotasks = {
+      apiKey: cfg.api_key,
+      secret: cfg.secret_key || wall.postback_secret || '',
+      bearer: cfg.bearer_token,
+    };
+  }
+
+  if (!config.offerwallme && !config.bitcotasks) {
     return { error: 'This offerwall does not support an on-site feed', status: 400 };
   }
-  const bearer = cfg.bearer_token;
-  if (!bearer) return { error: 'Offerwall.me API bearer token is not configured', status: 400 };
-  return { config: { publicKey: cfg.public_key, secret: wall.postback_secret, bearer } };
+  return { config };
 }
 
 router.get('/embed-urls', requireAuth, async (req: Request, res: Response) => {
@@ -93,19 +122,38 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
     const offers = await pool.query(
       'SELECT id, offerwall_id, title, description, reward_cents, device FROM offers ORDER BY reward_cents DESC'
     );
-    res.json({
-      offerwalls: walls.rows.map((w) => {
-        const { postback_config, ...rest } = w as { postback_config: Record<string, unknown> | null } & Record<
-          string,
-          unknown
-        >;
-        return {
-          ...rest,
-          has_feed: w.mode === 'live' && isOfferwallMeFeed(postback_config),
-          offers: offers.rows.filter((o) => o.offerwall_id === w.id),
-        };
-      }),
+    const feedWallIds = (w: { postback_config: Record<string, unknown> | null }) =>
+      isOfferwallMeFeed(w.postback_config) || isBitcoTasksFeed(w.postback_config);
+
+    const grouped = new Map<string, Record<string, unknown>[]>();
+    for (const w of walls.rows) {
+      const key = String(w.display_name || w.name || w.id);
+      const list = grouped.get(key) ?? [];
+      list.push(w as Record<string, unknown>);
+      grouped.set(key, list);
+    }
+
+    const merged = Array.from(grouped.values()).map((group) => {
+      const primary = group[0];
+      const { postback_config, ...rest } = primary as {
+        postback_config: Record<string, unknown> | null;
+      } & Record<string, unknown>;
+      const feedIds = group
+        .filter((w) => w.mode === 'live' && feedWallIds(w as { postback_config: Record<string, unknown> | null }))
+        .map((w) => w.id as number);
+      const nameKey = `${String(primary.display_name || primary.name || primary.id)}`;
+      return {
+        ...rest,
+        merged_key: nameKey,
+        feed_wall_ids: feedIds,
+        has_feed: feedIds.length > 0,
+        offers: offers.rows.filter((o) =>
+          group.some((w) => o.offerwall_id === w.id)
+        ),
+      };
     });
+
+    res.json({ offerwalls: merged });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to load offerwalls' });
@@ -113,19 +161,39 @@ router.get('/', optionalAuth, async (req: Request, res: Response) => {
 });
 
 router.get('/:id/feed', requireAuth, async (req: Request, res: Response) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id)) {
+  const raw = String(req.params.id);
+  const ids = raw.split(',').map((s) => Number(s.trim()));
+  if (ids.length === 0 || ids.some((n) => !Number.isInteger(n))) {
     return res.status(400).json({ error: 'Invalid offerwall id' });
   }
   const countryHint = requestCountry(req.query.country);
   try {
-    const loaded = await loadFeedWall(id);
-    if ('error' in loaded) {
-      return res.status(loaded.status).json({ error: loaded.error });
+    const walls = await Promise.all(ids.map((id) => loadFeedWall(id)));
+    const loaded = walls.filter((w): w is { config: LoadedFeed } => !('error' in w));
+    if (loaded.length === 0) {
+      const first = walls[0];
+      const status = 'error' in first ? first.status : 404;
+      const error = 'error' in first ? first.error : 'Offerwall not found';
+      return res.status(status).json({ error });
     }
     const ip = clientIp(req);
     const country = (await countryForIp(ip)) || countryHint;
-    const campaigns = await fetchFeed(loaded.config, String(req.user!.id), ip, country);
+    const userId = String(req.user!.id);
+    const perWall = await Promise.all(
+      loaded.map(async (l) => {
+        const sets = await Promise.all([
+          l.config.offerwallme ? fetchFeed(l.config.offerwallme, userId, ip, country) : [],
+          l.config.bitcotasks ? fetchBitcoTasksFeed(l.config.bitcotasks, userId, ip) : [],
+        ]);
+        return sets.flat().map((c) => ({ ...c, wall_id: l.config.wallId }));
+      })
+    );
+    const seen = new Set<string>();
+    const campaigns = perWall
+      .flat()
+      .filter((c) => c.reward_cents > 0)
+      .filter((c) => (seen.has(c.key) ? false : (seen.add(c.key), true)))
+      .sort((a, b) => b.reward_cents - a.reward_cents);
     res.json({ country, campaigns });
   } catch (err) {
     console.error(err);
@@ -265,8 +333,11 @@ router.post('/:id/tasks/:taskId/submit', requireAuth, async (req: Request, res: 
     if ('error' in loaded) {
       return res.status(loaded.status).json({ error: loaded.error });
     }
+    if (!loaded.config.offerwallme) {
+      return res.status(400).json({ error: 'Task submission is not supported for this offerwall' });
+    }
     const result = await submitTask({
-      ...loaded.config,
+      ...loaded.config.offerwallme,
       userId: String(req.user!.id),
       ip: clientIp(req),
       country:

@@ -77,7 +77,7 @@ router.patch('/offerwalls/:id', async (req: Request, res: Response) => {
   if (!Number.isInteger(id)) {
     return res.status(400).json({ error: 'Invalid offerwall id' });
   }
-  const { mode, wall_url, postback_secret, display_name, public_key, bearer_token } = req.body ?? {};
+  const { mode, wall_url, postback_secret, display_name, public_key, bearer_token, api_key, secret_key } = req.body ?? {};
   if (mode !== undefined && !['demo', 'live'].includes(mode)) {
     return res.status(400).json({ error: 'mode must be demo or live' });
   }
@@ -106,6 +106,18 @@ router.patch('/offerwalls/:id', async (req: Request, res: Response) => {
   if (typeof bearer_token === 'string' && bearer_token.length > 300) {
     return res.status(400).json({ error: 'bearer_token must be at most 300 characters' });
   }
+  if (api_key !== undefined && api_key !== null && typeof api_key !== 'string') {
+    return res.status(400).json({ error: 'api_key must be a string' });
+  }
+  if (typeof api_key === 'string' && api_key.length > 300) {
+    return res.status(400).json({ error: 'api_key must be at most 300 characters' });
+  }
+  if (secret_key !== undefined && secret_key !== null && typeof secret_key !== 'string') {
+    return res.status(400).json({ error: 'secret_key must be a string' });
+  }
+  if (typeof secret_key === 'string' && secret_key.length > 300) {
+    return res.status(400).json({ error: 'secret_key must be at most 300 characters' });
+  }
   try {
     const existing = await pool.query('SELECT postback_config FROM offerwalls WHERE id = $1', [id]);
     if (!existing.rowCount) {
@@ -116,6 +128,8 @@ router.patch('/offerwalls/:id', async (req: Request, res: Response) => {
     for (const [field, value] of [
       ['public_key', public_key],
       ['bearer_token', bearer_token],
+      ['api_key', api_key],
+      ['secret_key', secret_key],
     ] as const) {
       if (value === undefined || value === null) continue;
       const next = String(value).trim();

@@ -10,6 +10,22 @@ function clientIp(req: Request): string {
   return (req.ip || '').replace('::ffff:', '');
 }
 
+// Some networks (BitcoTasks) require the literal body "ok" or they mark the lead
+// failed even when we processed it. Others expect JSON.
+const PLAIN_OK_ADAPTERS = new Set(['bitcotasks']);
+
+function settle(
+  res: Response,
+  adapterName: string,
+  status: string,
+  fields: Record<string, unknown> = {}
+): Response {
+  if (PLAIN_OK_ADAPTERS.has(adapterName)) {
+    return res.type('text/plain').send('ok');
+  }
+  return res.json({ ok: true, status, ...fields });
+}
+
 const REDACTED_KEYS = new Set(['token', 'signature', 'identitysignature', 'authorization']);
 
 async function recordAttempt(
@@ -75,6 +91,8 @@ router.all('/:slug', async (req: Request, res: Response) => {
 
   const wallConfig = (wall.postback_config || {}) as Record<string, string>;
   const displayName = (wall.display_name as string | null) || 'Offer';
+  const adapterName =
+    wallConfig.adapter && adapters[wallConfig.adapter] ? wallConfig.adapter : slug;
   const adapter = adapters[slug] ? adapters[slug] : getAdapter(slug, wallConfig);
   const ctx = {
     params,
@@ -89,19 +107,25 @@ router.all('/:slug', async (req: Request, res: Response) => {
   if (!verdict.valid) {
     console.warn(`[postback:${slug}] rejected from ${ctx.clientIp}: ${verdict.reason}`);
     await recordAttempt(slug, params, 'rejected', ctx.clientIp, { reason: verdict.reason });
+    if (PLAIN_OK_ADAPTERS.has(adapterName)) {
+      return res.type('text/plain').send('ok');
+    }
     return res.status(403).json({ ok: false, error: 'validation failed' });
   }
 
   const parsed = adapter.parse(ctx);
   if (!parsed.ok) {
     await recordAttempt(slug, params, 'parse_error', ctx.clientIp, { reason: parsed.error });
+    if (PLAIN_OK_ADAPTERS.has(adapterName)) {
+      return res.type('text/plain').send('ok');
+    }
     return res.status(400).json({ ok: false, error: parsed.error });
   }
   const { userId, txnId, rewardCents, action, title } = parsed.value;
 
   if (action === 'ignore') {
     await recordAttempt(slug, params, 'ignored', ctx.clientIp, { txnId, subId: userId });
-    return res.json({ ok: true, status: 'ignored' });
+    return settle(res, adapterName, 'ignored');
   }
 
   if (rewardCents > config.maxPostbackCents) {
@@ -113,7 +137,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
       subId: userId,
       rewardCents,
     });
-    return res.json({ ok: true, status: 'oversized_reward' });
+    return settle(res, adapterName, 'oversized_reward');
   }
 
   const userLookup = await pool.query('SELECT id FROM users WHERE id = $1', [Number(userId)]);
@@ -125,7 +149,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
       subId: userId,
       rewardCents,
     });
-    return res.json({ ok: true, status: 'unknown_user' });
+    return settle(res, adapterName, 'unknown_user');
   }
 
   if (action === 'credit' && rewardCents <= 0) {
@@ -134,7 +158,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
       subId: userId,
       rewardCents,
     });
-    return res.json({ ok: true, status: 'zero_reward' });
+    return settle(res, adapterName, 'zero_reward');
   }
 
   const client = await pool.connect();
@@ -156,7 +180,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
           subId: userId,
           rewardCents,
         });
-        return res.json({ ok: true, status: 'duplicate' });
+        return settle(res, adapterName, 'duplicate');
       }
       await client.query(
         'UPDATE users SET balance_cents = balance_cents + $1, total_earned_cents = total_earned_cents + $1 WHERE id = $2',
@@ -206,7 +230,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
         subId: userId,
         rewardCents,
       });
-      return res.json({ ok: true, status: 'credited', reward_cents: rewardCents });
+      return settle(res, adapterName, 'credited', { reward_cents: rewardCents });
     }
 
     // reversal
@@ -224,7 +248,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
         subId: userId,
         rewardCents,
       });
-      return res.json({ ok: true, status: 'no_original' });
+      return settle(res, adapterName, 'no_original');
     }
     if (original.rows[0].status === 'reversed') {
       await client.query('ROLLBACK');
@@ -233,7 +257,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
         subId: userId,
         rewardCents,
       });
-      return res.json({ ok: true, status: 'duplicate' });
+      return settle(res, adapterName, 'duplicate');
     }
     const reverseCents = original.rows[0].reward_cents;
     await client.query(
@@ -260,7 +284,7 @@ router.all('/:slug', async (req: Request, res: Response) => {
       subId: userId,
       rewardCents: reverseCents,
     });
-    return res.json({ ok: true, status: 'reversed', reversed_cents: reverseCents });
+    return settle(res, adapterName, 'reversed', { reversed_cents: reverseCents });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error(`[postback:${slug}] error`, err);

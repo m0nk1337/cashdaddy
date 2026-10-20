@@ -24,6 +24,8 @@ interface Offerwall {
   mode: "demo" | "live";
   wall_url: string | null;
   has_feed?: boolean;
+  feed_wall_ids?: number[];
+  merged_key?: string;
   offers: Offer[];
 }
 
@@ -209,7 +211,13 @@ export default function OfferwallsPage() {
               </div>
               {wall.mode === "live" ? (
                 wall.has_feed ? (
-                  <OfferwallFeed wallId={wall.id} color={wall.color} />
+                  <OfferwallFeed
+                    wallId={(wall.feed_wall_ids && wall.feed_wall_ids.length > 0
+                      ? wall.feed_wall_ids
+                      : [wall.id]
+                    ).join(",")}
+                    color={wall.color}
+                  />
                 ) : (
                   <div className="border-t border-zinc-100 p-4">
                     {wall.wall_url ? (
