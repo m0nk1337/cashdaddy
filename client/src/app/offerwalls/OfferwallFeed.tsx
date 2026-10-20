@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, formatCents, getToken } from "@/lib/api";
+import { api, formatCents } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 interface FeedCampaign {
@@ -108,9 +108,12 @@ async function getCampaigns(wallId: number): Promise<FeedCampaign[]> {
   return (data.campaigns || []).filter((c) => c.reward_cents > 0);
 }
 
+type SessionStatus = "pending" | "credited" | "expired" | "failed";
+
 interface CompleteState {
+  sessionId: string;
   campaign: FeedCampaign;
-  phase: "watching" | "credited";
+  phase: "watching" | "credited" | "expired";
   creditedCents: number;
 }
 
@@ -160,30 +163,27 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
 
   useEffect(() => {
     if (!complete || complete.phase !== "watching") return;
-    const token = getToken();
-    if (!token) return;
+    const sessionId = complete.sessionId;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
 
     async function poll() {
       try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/wallet/transactions`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (res.ok) {
-          const data = (await res.json()) as { transactions?: { type: string; amount_cents: number; created_at: string }[] };
-          const since = Date.now() - 3 * 60_000;
-          const hit = (data.transactions || []).find(
-            (t) => t.type === "earn" && t.amount_cents > 0 && new Date(t.created_at).getTime() >= since
+        const data = await api<{
+          session: { status: SessionStatus; credited_cents: number };
+        }>(`/api/offerwalls/sessions/${sessionId}`);
+        if (cancelled) return;
+        if (data.session.status === "credited") {
+          setComplete((c) =>
+            c ? { ...c, phase: "credited", creditedCents: data.session.credited_cents } : c
           );
-          if (hit) {
-            if (cancelled) return;
-            setComplete((c) => (c ? { ...c, phase: "credited", creditedCents: hit.amount_cents } : c));
-            setReloadKey((k) => k + 1);
-            void refreshAuth();
-            return;
-          }
+          setReloadKey((k) => k + 1);
+          void refreshAuth();
+          return;
+        }
+        if (data.session.status === "expired" || data.session.status === "failed") {
+          setComplete((c) => (c ? { ...c, phase: "expired" } : c));
+          return;
         }
       } catch {
         /* keep polling */
@@ -192,13 +192,9 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
     }
 
     timer = setTimeout(poll, 5000);
-    const stop = setTimeout(() => {
-      if (!cancelled) setComplete((c) => (c && c.phase === "watching" ? null : c));
-    }, 3 * 60_000);
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      clearTimeout(stop);
     };
   }, [complete, refreshAuth]);
 
@@ -219,11 +215,33 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
     [campaigns, tab]
   );
 
-  function startCampaign(campaign: FeedCampaign) {
+  async function startCampaign(campaign: FeedCampaign) {
     if (!campaign.url) return;
-    window.open(campaign.url, "_blank", "noopener,noreferrer");
     setToast(null);
-    setComplete({ campaign, phase: "watching", creditedCents: 0 });
+    const tab = window.open("", "_blank");
+    try {
+      const { sessionId } = await api<{ sessionId: string }>(
+        `/api/offerwalls/${wallId}/start`,
+        {
+          method: "POST",
+          body: {
+            campaignKey: campaign.key,
+            campaignType: campaign.type,
+            campaignTitle: campaign.title,
+            expectedCents: campaign.reward_cents,
+          },
+        }
+      );
+      if (tab) tab.location.href = campaign.url;
+      else window.open(campaign.url, "_blank", "noopener,noreferrer");
+      setComplete({ sessionId, campaign, phase: "watching", creditedCents: 0 });
+    } catch (e) {
+      if (tab) tab.close();
+      setToast({
+        kind: "err",
+        text: e instanceof Error ? e.message : "Could not start this offer",
+      });
+    }
   }
 
   async function submitTask(campaign: FeedCampaign) {
@@ -258,17 +276,22 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
       {complete && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-900/50 p-4">
           <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
-            {complete.phase === "watching" ? (
+            {complete.phase === "watching" && (
               <>
                 <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-emerald-500" />
-                <h3 className="mt-4 text-lg font-extrabold">Waiting for your reward</h3>
+                <h3 className="mt-4 text-lg font-extrabold">Tracking your offer</h3>
                 <p className="mt-2 text-sm text-zinc-500">
                   Finish <strong>{complete.campaign.title}</strong> in the tab we just opened —
-                  usually about {complete.campaign.duration ?? 30} seconds. We will credit your
-                  balance automatically.
+                  usually about {complete.campaign.duration ?? 30} seconds. We are watching for the
+                  reward and will credit your balance the moment the network confirms it.
+                </p>
+                <p className="mt-3 rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-400">
+                  Pending — this can take a few minutes. You can close this and check My offers in
+                  your dashboard; the credit will still land.
                 </p>
               </>
-            ) : (
+            )}
+            {complete.phase === "credited" && (
               <>
                 <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-2xl">
                   🎉
@@ -280,11 +303,28 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
                 </p>
               </>
             )}
+            {complete.phase === "expired" && (
+              <>
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-amber-100 text-2xl">
+                  ⏳
+                </div>
+                <h3 className="mt-4 text-lg font-extrabold text-amber-600">Still processing</h3>
+                <p className="mt-2 text-sm text-zinc-500">
+                  We have not received confirmation for <strong>{complete.campaign.title}</strong>{" "}
+                  yet. The network may still be reviewing it — any reward will be added
+                  automatically, and you can track it under My offers in your dashboard.
+                </p>
+              </>
+            )}
             <button
               onClick={() => setComplete(null)}
               className="mt-5 w-full rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:scale-[1.02]"
             >
-              {complete.phase === "watching" ? "Got it" : "Nice!"}
+              {complete.phase === "watching"
+                ? "Got it"
+                : complete.phase === "credited"
+                  ? "Nice!"
+                  : "Close"}
             </button>
           </div>
         </div>

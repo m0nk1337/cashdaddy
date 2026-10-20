@@ -43,6 +43,14 @@ async function balanceOf(userId: number): Promise<number> {
   return row.rows[0].balance_cents;
 }
 
+async function adminToken(): Promise<string> {
+  const res = await request(app)
+    .post('/api/auth/login')
+    .send({ username: 'admin', password: 'admin12345' })
+    .expect(200);
+  return res.body.token as string;
+}
+
 let offerId: number;
 let offerReward: number;
 
@@ -677,5 +685,187 @@ describe('offerwall.me integration', () => {
       .set('Authorization', `Bearer ${user.token}`)
       .expect(200);
     expect(embedAfter.body.urls[String(wall.id)]).toBeUndefined();
+  });
+});
+
+describe('offer session tracking', () => {
+  async function liveWallId(token: string): Promise<number> {
+    const walls = await request(app)
+      .get('/api/admin/offerwalls')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wall = walls.body.offerwalls.find((w: { slug: string }) => w.slug === 'offerwall-me');
+    await request(app)
+      .patch(`/api/admin/offerwalls/${wall.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mode: 'live',
+        wall_url: 'https://offerwall.me/offerwall/{publicKey}/{userId}',
+        public_key: 'pk_session_test',
+        postback_secret: 'secret_ow_session',
+      })
+      .expect(200);
+    return wall.id as number;
+  }
+
+  it('requires auth to start or list sessions', async () => {
+    await request(app).post('/api/offerwalls/1/start').send({}).expect(401);
+    await request(app).get('/api/offerwalls/sessions').expect(401);
+  });
+
+  it('rejects an invalid campaign payload', async () => {
+    const token = await adminToken();
+    const wallId = await liveWallId(token);
+    const user = await registerUser('sess');
+    await request(app)
+      .post(`/api/offerwalls/${wallId}/start`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ campaignKey: 'ptc:1', campaignType: 'nonsense', campaignTitle: 'x', expectedCents: 5 })
+      .expect(400);
+  });
+
+  it('creates a pending session and marks it credited when the postback lands', async () => {
+    const token = await adminToken();
+    const wallId = await liveWallId(token);
+    const user = await registerUser('sess');
+
+    const start = await request(app)
+      .post(`/api/offerwalls/${wallId}/start`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({
+        campaignKey: 'ptc:3',
+        campaignType: 'ptc',
+        campaignTitle: 'Watch a video',
+        expectedCents: 5,
+      })
+      .expect(201);
+    const sessionId = start.body.sessionId as string;
+    expect(sessionId).toMatch(/^[0-9a-f-]{36}$/i);
+
+    const pending = await request(app)
+      .get(`/api/offerwalls/sessions/${sessionId}`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .expect(200);
+    expect(pending.body.session.status).toBe('pending');
+    expect(pending.body.session.campaign_title).toBe('Watch a video');
+
+    const reward = '5';
+    const txn = `owsess_${uniq()}`;
+    const sig = crypto
+      .createHash('md5')
+      .update(String(user.id) + txn + reward + 'secret_ow_session')
+      .digest('hex');
+    const credit = await request(app)
+      .get(
+        `/api/postback/offerwall-me?subId=${user.id}&transId=${txn}&reward=${reward}&status=1&offer_name=Watch+an+ad&offer_type=ptc&signature=${sig}`
+      )
+      .expect(200);
+    expect(credit.body.status).toBe('credited');
+    expect(await balanceOf(user.id)).toBe(5);
+
+    const after = await request(app)
+      .get(`/api/offerwalls/sessions/${sessionId}`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .expect(200);
+    expect(after.body.session.status).toBe('credited');
+    expect(after.body.session.credited_cents).toBe(5);
+    expect(after.body.session.txn_id).toBe(txn);
+  });
+
+  it('still credits money even when no session was opened', async () => {
+    await adminToken();
+    const user = await registerUser('sessnolan');
+    const reward = '9';
+    const txn = `owsolo_${uniq()}`;
+    const sig = crypto
+      .createHash('md5')
+      .update(String(user.id) + txn + reward + 'secret_ow_session')
+      .digest('hex');
+    const credit = await request(app)
+      .get(
+        `/api/postback/offerwall-me?subId=${user.id}&transId=${txn}&reward=${reward}&status=1&signature=${sig}`
+      )
+      .expect(200);
+    expect(credit.body.status).toBe('credited');
+    expect(await balanceOf(user.id)).toBe(9);
+
+    const list = await request(app)
+      .get('/api/offerwalls/sessions')
+      .set('Authorization', `Bearer ${user.token}`)
+      .expect(200);
+    const rows = list.body.sessions as { status: string; credited_cents: number }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe('credited');
+    expect(rows[0].credited_cents).toBe(9);
+  });
+
+  it('expires stale pending sessions and flags reversals', async () => {
+    const token = await adminToken();
+    const wallId = await liveWallId(token);
+    const user = await registerUser('sessexp');
+
+    const start = await request(app)
+      .post(`/api/offerwalls/${wallId}/start`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ campaignKey: 'ptc:9', campaignType: 'ptc', campaignTitle: 'Stale', expectedCents: 4 })
+      .expect(201);
+    const sessionId = start.body.sessionId as string;
+    await pool.query(
+      `UPDATE offer_sessions SET created_at = NOW() - INTERVAL '45 minutes' WHERE id = $1`,
+      [sessionId]
+    );
+    const stale = await request(app)
+      .get(`/api/offerwalls/sessions/${sessionId}`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .expect(200);
+    expect(stale.body.session.status).toBe('expired');
+
+    const fresh = await request(app)
+      .post(`/api/offerwalls/${wallId}/start`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .send({ campaignKey: 'ptc:10', campaignType: 'ptc', campaignTitle: 'Reversed', expectedCents: 8 })
+      .expect(201);
+    const freshId = fresh.body.sessionId as string;
+    const reward = '8';
+    const txn = `owrev_${uniq()}`;
+    const sig = (s: string) =>
+      crypto.createHash('md5').update(String(user.id) + txn + reward + s).digest('hex');
+    await request(app)
+      .get(
+        `/api/postback/offerwall-me?subId=${user.id}&transId=${txn}&reward=${reward}&status=1&signature=${sig('secret_ow_session')}`
+      )
+      .expect(200);
+    await request(app)
+      .get(
+        `/api/postback/offerwall-me?subId=${user.id}&transId=${txn}&reward=${reward}&status=2&signature=${sig('secret_ow_session')}`
+      )
+      .expect(200);
+    const reversed = await request(app)
+      .get(`/api/offerwalls/sessions/${freshId}`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .expect(200);
+    expect(reversed.body.session.status).toBe('failed');
+    expect(reversed.body.session.credited_cents).toBe(0);
+  });
+
+  it('does not leak another user session', async () => {
+    const token = await adminToken();
+    const wallId = await liveWallId(token);
+    const owner = await registerUser('sessown');
+    const other = await registerUser('sessoth');
+    const start = await request(app)
+      .post(`/api/offerwalls/${wallId}/start`)
+      .set('Authorization', `Bearer ${owner.token}`)
+      .send({ campaignKey: 'ptc:11', campaignType: 'ptc', campaignTitle: 'Private', expectedCents: 3 })
+      .expect(201);
+    await request(app)
+      .get(`/api/offerwalls/sessions/${start.body.sessionId}`)
+      .set('Authorization', `Bearer ${other.token}`)
+      .expect(404);
+    const list = await request(app)
+      .get('/api/offerwalls/sessions')
+      .set('Authorization', `Bearer ${other.token}`)
+      .expect(200);
+    expect(list.body.sessions).toHaveLength(0);
   });
 });

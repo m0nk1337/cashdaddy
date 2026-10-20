@@ -133,6 +133,112 @@ router.get('/:id/feed', requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+router.post('/:id/start', requireAuth, async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: 'Invalid offerwall id' });
+  }
+  const { campaignKey, campaignType, campaignTitle, expectedCents } = (req.body ?? {}) as {
+    campaignKey?: unknown;
+    campaignType?: unknown;
+    campaignTitle?: unknown;
+    expectedCents?: unknown;
+  };
+  const key = String(campaignKey ?? '');
+  const type = String(campaignType ?? '');
+  if (!key || !['offer', 'ptc', 'shortlink', 'task'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid campaign' });
+  }
+  const reward = Number(expectedCents);
+  try {
+    const wall = await pool.query<{ slug: string }>(
+      `SELECT slug FROM offerwalls WHERE id = $1 AND is_active = TRUE AND mode = 'live'`,
+      [id]
+    );
+    if (!wall.rowCount) {
+      return res.status(404).json({ error: 'Offerwall not found' });
+    }
+    const result = await pool.query<{ id: string }>(
+      `INSERT INTO offer_sessions
+         (user_id, offerwall_id, offerwall_slug, campaign_key, campaign_type, campaign_title, expected_cents)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [
+        req.user!.id,
+        id,
+        wall.rows[0].slug,
+        key,
+        type,
+        String(campaignTitle ?? 'Offer').slice(0, 500),
+        Number.isFinite(reward) && reward > 0 ? Math.round(reward) : 0,
+      ]
+    );
+    res.status(201).json({ sessionId: result.rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to start offer' });
+  }
+});
+
+const SESSION_STALE_MS = 30 * 60_000;
+
+router.get('/sessions', requireAuth, async (req: Request, res: Response) => {
+  try {
+    await pool.query(
+      `UPDATE offer_sessions
+          SET status = 'expired', updated_at = NOW()
+        WHERE user_id = $1 AND status = 'pending' AND created_at < NOW() - INTERVAL '30 minutes'`,
+      [req.user!.id]
+    );
+    const result = await pool.query(
+      `SELECT id, campaign_key, campaign_type, campaign_title, expected_cents,
+              status, credited_cents, txn_id, created_at, updated_at
+         FROM offer_sessions
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 50`,
+      [req.user!.id]
+    );
+    res.json({ sessions: result.rows, staleAfterMs: SESSION_STALE_MS });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load offer history' });
+  }
+});
+
+router.get('/sessions/:sessionId', requireAuth, async (req: Request, res: Response) => {
+  const sessionId = String(req.params.sessionId || '');
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session id' });
+  }
+  try {
+    const result = await pool.query(
+      `SELECT id, campaign_key, campaign_type, campaign_title, expected_cents,
+              status, credited_cents, txn_id, created_at, updated_at
+         FROM offer_sessions
+        WHERE id = $1 AND user_id = $2`,
+      [sessionId, req.user!.id]
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const row = result.rows[0];
+    const ageMs = Date.now() - new Date(row.created_at as string).getTime();
+    if (row.status === 'pending' && ageMs > SESSION_STALE_MS) {
+      const updated = await pool.query(
+        `UPDATE offer_sessions SET status = 'expired', updated_at = NOW()
+          WHERE id = $1 AND status = 'pending' RETURNING status`,
+        [sessionId]
+      );
+      if (updated.rowCount) row.status = updated.rows[0].status;
+    }
+    res.json({ session: row });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load session' });
+  }
+});
+
 router.post('/:id/tasks/:taskId/submit', requireAuth, async (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const taskId = String(req.params.taskId || '');

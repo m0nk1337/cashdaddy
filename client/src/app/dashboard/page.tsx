@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { api, formatCents } from "@/lib/api";
 import VerificationBanner from "@/components/VerificationBanner";
+import OfferHistory from "@/components/OfferHistory";
 
 interface Transaction {
   id: number;
@@ -456,6 +457,8 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
+
+      <OfferHistory />
     </div>
   );
 }

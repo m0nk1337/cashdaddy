@@ -67,6 +67,26 @@ CREATE TABLE IF NOT EXISTS postbacks (
   UNIQUE (offerwall_slug, txn_id)
 );
 
+CREATE TABLE IF NOT EXISTS offer_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  offerwall_id INTEGER NOT NULL REFERENCES offerwalls(id),
+  offerwall_slug TEXT NOT NULL,
+  campaign_key TEXT NOT NULL,
+  campaign_type VARCHAR(20) NOT NULL,
+  campaign_title TEXT NOT NULL,
+  expected_cents INTEGER NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'credited', 'expired', 'failed')),
+  credited_cents INTEGER NOT NULL DEFAULT 0,
+  txn_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT Now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT Now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_offer_sessions_user ON offer_sessions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_offer_sessions_pending ON offer_sessions(status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS postback_attempts (
   id SERIAL PRIMARY KEY,
   offerwall_slug TEXT NOT NULL,

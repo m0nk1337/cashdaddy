@@ -168,6 +168,38 @@ router.all('/:slug', async (req: Request, res: Response) => {
         [user.id, rewardCents, `${displayName}: ${title || 'offer completion'}`]
       );
       await awardReferralBonus(client, user.id, rewardCents, `${slug} postback`);
+
+      const session = await client.query(
+        `SELECT id FROM offer_sessions
+          WHERE user_id = $1 AND offerwall_slug = $2 AND status = 'pending'
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [user.id, slug]
+      );
+      if (session.rowCount) {
+        await client.query(
+          `UPDATE offer_sessions
+              SET status = 'credited', credited_cents = $1, txn_id = $2, updated_at = NOW()
+            WHERE id = $3`,
+          [rewardCents, txnId, session.rows[0].id]
+        );
+      } else {
+        await client.query(
+          `INSERT INTO offer_sessions
+             (user_id, offerwall_id, offerwall_slug, campaign_key, campaign_type,
+              campaign_title, expected_cents, status, credited_cents, txn_id)
+           SELECT $1, w.id, $2, 'postback:' || $3, 'offer', $4, $5, 'credited', $5, $3
+             FROM offerwalls w WHERE w.slug = $2`,
+          [
+            user.id,
+            slug,
+            txnId,
+            `${displayName}: ${title || 'offer completion'}`.slice(0, 500),
+            rewardCents,
+          ]
+        );
+      }
+
       await client.query('COMMIT');
       await recordAttempt(slug, params, 'credited', ctx.clientIp, {
         txnId,
@@ -215,6 +247,12 @@ router.all('/:slug', async (req: Request, res: Response) => {
       `INSERT INTO transactions (user_id, type, amount_cents, description)
        VALUES ($1, 'adjustment', $2, $3)`,
       [user.id, -reverseCents, `${displayName}: reversal of txn ${txnId}`]
+    );
+    await client.query(
+      `UPDATE offer_sessions
+          SET status = 'failed', credited_cents = 0, updated_at = NOW()
+        WHERE user_id = $1 AND txn_id = $2 AND status = 'credited'`,
+      [user.id, txnId]
     );
     await client.query('COMMIT');
     await recordAttempt(slug, params, 'reversed', ctx.clientIp, {
