@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, formatCents } from "@/lib/api";
 
 interface FeedCampaign {
@@ -37,6 +37,11 @@ const TYPE_BADGES: Record<FeedCampaign["type"], { label: string; className: stri
   ptc: { label: "Watch", className: "bg-amber-100 text-amber-700" },
   shortlink: { label: "Shortlink", className: "bg-emerald-100 text-emerald-700" },
 };
+
+function formatReward(cents: number): string {
+  if (cents >= 100) return formatCents(cents);
+  return `${cents}¢`;
+}
 
 function detectCountry(): string {
   try {
@@ -107,6 +112,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const lastFetchRef = useRef(0);
   const [tab, setTab] = useState<Tab>("all");
   const [openTask, setOpenTask] = useState<string | null>(null);
   const [proof, setProof] = useState("");
@@ -116,6 +122,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
 
   useEffect(() => {
     let cancelled = false;
+    lastFetchRef.current = Date.now();
     getCampaigns(wallId)
       .then((data) => {
         if (cancelled) return;
@@ -132,6 +139,15 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
       cancelled = true;
     };
   }, [wallId, reloadKey]);
+
+  useEffect(() => {
+    function onFocus() {
+      if (Date.now() - lastFetchRef.current < 30_000) return;
+      setReloadKey((k) => k + 1);
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   function refresh() {
     setLoading(true);
@@ -184,8 +200,8 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
 
   return (
     <div className="border-t border-zinc-100 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex items-center gap-3">
+        <div className="no-scrollbar -mx-1 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-1 pb-1">
           {TABS.map((t) => {
             const disabled = counts[t.id] === 0;
             return (
@@ -193,7 +209,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 disabled={disabled && t.id !== "all"}
-                className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
                   tab === t.id ? "text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
                 } ${disabled && t.id !== "all" ? "cursor-not-allowed opacity-40" : ""}`}
                 style={tab === t.id ? { backgroundColor: color } : undefined}
@@ -206,7 +222,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
         <button
           onClick={refresh}
           disabled={loading}
-          className="rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-200 disabled:opacity-60"
+          className="shrink-0 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-200 disabled:opacity-60"
         >
           {loading ? "Loading..." : "Refresh"}
         </button>
@@ -240,10 +256,10 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
           return (
             <li
               key={campaign.key}
-              className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+              className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5"
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
                   {campaign.image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -258,28 +274,31 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
                       {badge.label}
                     </span>
                   )}
-                  <div>
+                  <div className="min-w-0">
                     {campaign.image && (
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${badge.className}`}>
                         {badge.label}
                       </span>
                     )}
-                    <h3 className="font-bold leading-snug">{campaign.title}</h3>
+                    <h3 className="font-bold leading-snug [overflow-wrap:anywhere]">{campaign.title}</h3>
                   </div>
                 </div>
-                {campaign.reward_cents > 0 ? (
-                  <span className="shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-sm font-extrabold text-emerald-600 tabular-nums">
-                    +{formatCents(campaign.reward_cents)}
-                  </span>
-                ) : (
-                  <span className="shrink-0 rounded-lg bg-zinc-100 px-2 py-1 text-[11px] font-bold text-zinc-500">
-                    Reward on completion
-                  </span>
-                )}
+                <span
+                  className={`shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-sm font-extrabold tabular-nums ${
+                    campaign.reward_cents > 0
+                      ? "bg-emerald-50 text-emerald-600"
+                      : "bg-zinc-100 text-zinc-500"
+                  }`}
+                >
+                  {campaign.reward_cents > 0 ? "+" : ""}
+                  {formatReward(campaign.reward_cents)}
+                </span>
               </div>
 
               {campaign.description && (
-                <p className="mt-1.5 flex-1 text-sm text-zinc-500">{campaign.description}</p>
+                <p className="mt-1.5 flex-1 text-sm break-words text-zinc-500 [overflow-wrap:anywhere]">
+                  {campaign.description}
+                </p>
               )}
 
               {expanded && (
@@ -308,8 +327,8 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
                 </div>
               )}
 
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500">
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <span className="max-w-full truncate rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500">
                   {campaign.duration ? `${campaign.duration}s` : campaign.type === "task" ? "Manual review" : "Open & complete"}
                 </span>
                 {isTask ? (

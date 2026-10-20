@@ -57,3 +57,12 @@ body {
 .animate-in {
   animation: float-up 0.45s ease-out both;
 }
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
