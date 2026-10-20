@@ -45,8 +45,21 @@ export function createApp(): express.Express {
     next();
   });
 
-  app.get('/', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'gpt-site-api' });
+  app.get('/', (req: Request, res: Response) => {
+    const accept = String(req.headers.accept || '');
+    const wantsJson = /application\/json/i.test(accept) && !/text\/html/i.test(accept);
+    if (wantsJson) {
+      return res.json({ status: 'ok', service: 'gpt-site-api' });
+    }
+    res.type('html').send(
+      '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+        '<meta name="offerwall-verification" content="6ad6675f1c3d1991930c1da6">' +
+        '<title>CashDaddy API</title></head>' +
+        '<body><h1>CashDaddy API</h1>' +
+        '<p>Server-to-server endpoint for <a href="https://cashdaddy.me">cashdaddy.me</a>.</p>' +
+        '</body></html>'
+    );
   });
 
   app.use('/api/auth', authRoutes);
