@@ -41,6 +41,22 @@ router.get('/postbacks', async (_req: Request, res: Response) => {
   }
 });
 
+router.get('/postback-attempts', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 200, 500);
+    const result = await pool.query(
+      `SELECT id, offerwall_slug, txn_id, sub_id, reward_cents, outcome, ip, raw, received_at
+       FROM postback_attempts
+       ORDER BY received_at DESC LIMIT $1`,
+      [limit]
+    );
+    res.json({ attempts: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to load postback attempts' });
+  }
+});
+
 router.get('/offerwalls', async (_req: Request, res: Response) => {
   try {
     const result = await pool.query(

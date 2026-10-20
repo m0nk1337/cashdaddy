@@ -67,6 +67,20 @@ CREATE TABLE IF NOT EXISTS postbacks (
   UNIQUE (offerwall_slug, txn_id)
 );
 
+CREATE TABLE IF NOT EXISTS postback_attempts (
+  id SERIAL PRIMARY KEY,
+  offerwall_slug TEXT NOT NULL,
+  txn_id TEXT,
+  sub_id TEXT,
+  reward_cents INTEGER,
+  outcome TEXT NOT NULL,
+  ip TEXT,
+  raw JSONB NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_postback_attempts_received ON postback_attempts(received_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_offers_wall ON offers(offerwall_id);
