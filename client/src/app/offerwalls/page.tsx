@@ -194,9 +194,9 @@ export default function OfferwallsPage() {
                 className="flex flex-col gap-2 px-6 py-5 sm:flex-row sm:items-center sm:justify-between"
                 style={{ borderTop: `6px solid ${wall.color}` }}
               >
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-xl font-extrabold">{wall.display_name}</h2>
-                  <p className="mt-0.5 text-sm text-zinc-500">{wall.description}</p>
+                  <p className="mt-0.5 text-sm text-zinc-500 [overflow-wrap:anywhere]">{wall.description}</p>
                 </div>
                 <span
                   className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${
@@ -229,18 +229,20 @@ export default function OfferwallsPage() {
                   </div>
                 )
               ) : (
-                <ul className="grid gap-px bg-zinc-100 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="grid grid-cols-1 gap-px bg-zinc-100 sm:grid-cols-2 lg:grid-cols-3">
                   {wall.offers.map((offer) => {
                     const isDone = completed.has(offer.id);
                     return (
-                      <li key={offer.id} className="flex flex-col bg-white p-5">
-                        <div className="flex items-start justify-between gap-3">
-                          <h3 className="font-bold leading-snug">{offer.title}</h3>
+                      <li key={offer.id} className="flex min-w-0 flex-col bg-white p-5">
+                        <div className="flex min-w-0 items-start justify-between gap-3">
+                          <h3 className="font-bold leading-snug [overflow-wrap:anywhere]">{offer.title}</h3>
                           <span className="shrink-0 rounded-lg bg-emerald-50 px-2 py-1 text-sm font-extrabold text-emerald-600 tabular-nums">
                             +{formatCents(offer.reward_cents)}
                           </span>
                         </div>
-                        <p className="mt-1.5 flex-1 text-sm text-zinc-500">{offer.description}</p>
+                        <p className="mt-1.5 flex-1 text-sm text-zinc-500 [overflow-wrap:anywhere]">
+                          {offer.description}
+                        </p>
                         <div className="mt-4 flex items-center justify-between gap-3">
                           <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500">
                             {deviceLabels[offer.device] || offer.device}

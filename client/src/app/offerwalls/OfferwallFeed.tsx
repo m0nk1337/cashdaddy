@@ -200,7 +200,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
 
   return (
     <div className="border-t border-zinc-100 p-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="no-scrollbar -mx-1 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-1 pb-1">
           {TABS.map((t) => {
             const disabled = counts[t.id] === 0;
@@ -222,7 +222,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
         <button
           onClick={refresh}
           disabled={loading}
-          className="shrink-0 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-200 disabled:opacity-60"
+          className="shrink-0 self-end rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-bold text-zinc-600 hover:bg-zinc-200 disabled:opacity-60 sm:self-auto"
         >
           {loading ? "Loading..." : "Refresh"}
         </button>
@@ -248,7 +248,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
         </p>
       )}
 
-      <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((campaign) => {
           const badge = TYPE_BADGES[campaign.type];
           const isTask = campaign.type === "task";
@@ -256,7 +256,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
           return (
             <li
               key={campaign.key}
-              className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5"
+              className="flex min-w-0 flex-col rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-start gap-3">
