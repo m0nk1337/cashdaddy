@@ -105,7 +105,7 @@ async function getCampaigns(wallId: number): Promise<FeedCampaign[]> {
   const data = await api<{ campaigns: FeedCampaign[] }>(
     `/api/offerwalls/${wallId}/feed?country=${country}`
   );
-  return (data.campaigns || []).filter((c) => c.type === "task" || c.reward_cents > 0);
+  return (data.campaigns || []).filter((c) => c.reward_cents > 0);
 }
 
 interface CompleteState {
