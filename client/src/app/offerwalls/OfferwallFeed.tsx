@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, formatCents } from "@/lib/api";
+import { api, formatCents, getToken } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 interface FeedCampaign {
   key: string;
@@ -104,10 +105,17 @@ async function getCampaigns(wallId: number): Promise<FeedCampaign[]> {
   const data = await api<{ campaigns: FeedCampaign[] }>(
     `/api/offerwalls/${wallId}/feed?country=${country}`
   );
-  return data.campaigns || [];
+  return (data.campaigns || []).filter((c) => c.type === "task" || c.reward_cents > 0);
+}
+
+interface CompleteState {
+  campaign: FeedCampaign;
+  phase: "watching" | "credited";
+  creditedCents: number;
 }
 
 export default function OfferwallFeed({ wallId, color }: { wallId: number; color: string }) {
+  const { refresh: refreshAuth } = useAuth();
   const [campaigns, setCampaigns] = useState<FeedCampaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -119,6 +127,7 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [complete, setComplete] = useState<CompleteState | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +158,50 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  useEffect(() => {
+    if (!complete || complete.phase !== "watching") return;
+    const token = getToken();
+    if (!token) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    async function poll() {
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}/api/wallet/transactions`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (res.ok) {
+          const data = (await res.json()) as { transactions?: { type: string; amount_cents: number; created_at: string }[] };
+          const since = Date.now() - 3 * 60_000;
+          const hit = (data.transactions || []).find(
+            (t) => t.type === "earn" && t.amount_cents > 0 && new Date(t.created_at).getTime() >= since
+          );
+          if (hit) {
+            if (cancelled) return;
+            setComplete((c) => (c ? { ...c, phase: "credited", creditedCents: hit.amount_cents } : c));
+            setReloadKey((k) => k + 1);
+            void refreshAuth();
+            return;
+          }
+        }
+      } catch {
+        /* keep polling */
+      }
+      if (!cancelled) timer = setTimeout(poll, 5000);
+    }
+
+    timer = setTimeout(poll, 5000);
+    const stop = setTimeout(() => {
+      if (!cancelled) setComplete((c) => (c && c.phase === "watching" ? null : c));
+    }, 3 * 60_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      clearTimeout(stop);
+    };
+  }, [complete, refreshAuth]);
+
   function refresh() {
     setLoading(true);
     setToast(null);
@@ -169,6 +222,8 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
   function startCampaign(campaign: FeedCampaign) {
     if (!campaign.url) return;
     window.open(campaign.url, "_blank", "noopener,noreferrer");
+    setToast(null);
+    setComplete({ campaign, phase: "watching", creditedCents: 0 });
   }
 
   async function submitTask(campaign: FeedCampaign) {
@@ -200,6 +255,41 @@ export default function OfferwallFeed({ wallId, color }: { wallId: number; color
 
   return (
     <div className="border-t border-zinc-100 p-4">
+      {complete && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-900/50 p-4">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-2xl">
+            {complete.phase === "watching" ? (
+              <>
+                <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-emerald-500" />
+                <h3 className="mt-4 text-lg font-extrabold">Waiting for your reward</h3>
+                <p className="mt-2 text-sm text-zinc-500">
+                  Finish <strong>{complete.campaign.title}</strong> in the tab we just opened —
+                  usually about {complete.campaign.duration ?? 30} seconds. We will credit your
+                  balance automatically.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-emerald-100 text-2xl">
+                  🎉
+                </div>
+                <h3 className="mt-4 text-lg font-extrabold text-emerald-600">Offer complete!</h3>
+                <p className="mt-2 text-sm text-zinc-500">
+                  <strong>+{formatReward(complete.creditedCents)}</strong> was added to your balance
+                  for {complete.campaign.title}.
+                </p>
+              </>
+            )}
+            <button
+              onClick={() => setComplete(null)}
+              className="mt-5 w-full rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-all hover:scale-[1.02]"
+            >
+              {complete.phase === "watching" ? "Got it" : "Nice!"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="no-scrollbar -mx-1 flex min-w-0 flex-1 items-center gap-2 overflow-x-auto px-1 pb-1">
           {TABS.map((t) => {
