@@ -16,6 +16,7 @@ import {
   type BitcoTasksConfig,
 } from '../bitcotasks';
 import { countryForIp } from '../geo';
+import { detectDevice, deviceAllowed } from '../device';
 
 const router = Router();
 
@@ -189,12 +190,14 @@ router.get('/:id/feed', requireAuth, async (req: Request, res: Response) => {
       })
     );
     const seen = new Set<string>();
+    const device = detectDevice(req.get('user-agent'));
     const campaigns = perWall
       .flat()
       .filter((c) => c.reward_cents > 0)
       .filter((c) => (seen.has(c.key) ? false : (seen.add(c.key), true)))
+      .filter((c) => c.type !== 'offer' || deviceAllowed(c.devices, device))
       .sort((a, b) => b.reward_cents - a.reward_cents);
-    res.json({ country, campaigns });
+    res.json({ country, device: device.platform, campaigns });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to load offers' });

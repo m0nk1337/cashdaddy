@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../src/app';
 import { initSchema, pool } from '../src/db';
@@ -1031,5 +1031,98 @@ describe('bitcotasks integration', () => {
     expect(micro.has_feed).toBe(true);
     expect(Array.isArray(micro.feed_wall_ids)).toBe(true);
     expect(micro.feed_wall_ids.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('device targeting', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function liveOwmWall(token: string): Promise<number> {
+    const walls = await request(app)
+      .get('/api/admin/offerwalls')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const wall = walls.body.offerwalls.find((w: { slug: string }) => w.slug === 'offerwall-me');
+    await request(app)
+      .patch(`/api/admin/offerwalls/${wall.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mode: 'live',
+        public_key: 'pk_device_test',
+        postback_secret: 'secret_ow_device',
+        bearer_token: 'ow_bearer_device',
+      })
+      .expect(200);
+    return wall.id as number;
+  }
+
+  // Serve one offer per endpoint; offers carry device targeting, others do not.
+  function stubFeed() {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        const data = url.includes('/offerapi.php')
+          ? [
+              { id: 'd_all', title: 'All offer', reward: '50', devices: ['All'], url: 'https://x/all' },
+              { id: 'd_mobile', title: 'Mobile offer', reward: '40', devices: ['Mobile'], url: 'https://x/mob' },
+              { id: 'd_desktop', title: 'Desktop offer', reward: '30', devices: ['Desktop'], url: 'https://x/desk' },
+              { id: 'd_android', title: 'Android offer', reward: '20', devices: ['Android'], url: 'https://x/and' },
+              { id: 'd_iphone', title: 'iPhone offer', reward: '10', devices: ['iPhone'], url: 'https://x/ios' },
+            ]
+          : [];
+        return new Response(JSON.stringify({ status: 200, data }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      })
+    );
+  }
+
+  const UA_ANDROID =
+    'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36';
+  const UA_DESKTOP =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
+
+  it('shows only offers matching an Android visitor', async () => {
+    const token = await adminToken();
+    const wallId = await liveOwmWall(token);
+    const user = await registerUser('dev');
+    stubFeed();
+    const res = await request(app)
+      .get(`/api/offerwalls/${wallId}/feed?country=US`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .set('X-Forwarded-For', '203.0.113.10')
+      .set('User-Agent', UA_ANDROID)
+      .expect(200);
+    const titles = res.body.campaigns.map((c: { title: string }) => c.title);
+    expect(res.body.device).toBe('mobile');
+    expect(titles).toContain('All offer');
+    expect(titles).toContain('Mobile offer');
+    expect(titles).toContain('Android offer');
+    expect(titles).not.toContain('Desktop offer');
+    expect(titles).not.toContain('iPhone offer');
+  });
+
+  it('shows only offers matching a desktop visitor', async () => {
+    const token = await adminToken();
+    const wallId = await liveOwmWall(token);
+    const user = await registerUser('dev');
+    stubFeed();
+    const res = await request(app)
+      .get(`/api/offerwalls/${wallId}/feed?country=US`)
+      .set('Authorization', `Bearer ${user.token}`)
+      .set('X-Forwarded-For', '203.0.113.11')
+      .set('User-Agent', UA_DESKTOP)
+      .expect(200);
+    const titles = res.body.campaigns.map((c: { title: string }) => c.title);
+    expect(res.body.device).toBe('desktop');
+    expect(titles).toContain('All offer');
+    expect(titles).toContain('Desktop offer');
+    expect(titles).not.toContain('Mobile offer');
+    expect(titles).not.toContain('Android offer');
+    expect(titles).not.toContain('iPhone offer');
   });
 });

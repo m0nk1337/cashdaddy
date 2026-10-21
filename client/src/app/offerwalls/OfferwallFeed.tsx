@@ -45,6 +45,21 @@ function formatReward(cents: number): string {
   return `${cents}¢`;
 }
 
+const DEVICE_LABELS: Record<string, string> = {
+  mobile: "Mobile",
+  desktop: "Desktop",
+  android: "Android",
+  iphone: "iPhone",
+};
+
+function deviceLabel(devices: string[] | undefined): string | null {
+  if (!devices || devices.length === 0) return null;
+  const tags = devices.map((d) => d.toLowerCase().trim());
+  if (tags.includes("all")) return null;
+  const unique = [...new Set(tags.map((t) => DEVICE_LABELS[t] ?? t))];
+  return unique.length > 0 ? unique.join(" / ") : null;
+}
+
 function detectCountry(): string {
   try {
     const region = new Intl.Locale(navigator.language || "en-US").region;
@@ -460,9 +475,16 @@ export default function OfferwallFeed({ wallId, color }: { wallId: string; color
               )}
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <span className="max-w-full truncate rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500">
-                  {campaign.duration ? `${campaign.duration}s` : campaign.type === "task" ? "Manual review" : "Open & complete"}
-                </span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="max-w-full truncate rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500">
+                    {campaign.duration ? `${campaign.duration}s` : campaign.type === "task" ? "Manual review" : "Open & complete"}
+                  </span>
+                  {deviceLabel(campaign.devices) && (
+                    <span className="shrink-0 rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                      {deviceLabel(campaign.devices)}
+                    </span>
+                  )}
+                </div>
                 {isTask ? (
                   <button
                     onClick={() => setOpenTask(expanded ? null : campaign.key)}
